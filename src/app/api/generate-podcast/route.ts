@@ -83,55 +83,36 @@ async function processInBackground(
   email: string
 ): Promise<void> {
   // Dynamic imports to avoid build-time issues with Node.js 18 + openai SDK
-  const { fetchAllUrls } = await import("@/lib/urlFetcher");
   const { generateScript } = await import("@/lib/scriptGenerator");
   const { generatePodcastAudio } = await import("@/lib/audioGenerator");
   const { sendPodcastEmail, sendErrorEmail } = await import(
     "@/lib/emailSender"
   );
 
-  let failedUrls: string[] = [];
-
   try {
     console.log(`Starting podcast generation for topic: "${topic}"`);
-
-    // Step 1: Fetch URL content (if provided)
-    let urlSummaries = "";
     if (urls.length > 0) {
-      console.log(`Fetching ${urls.length} URLs...`);
-      const urlResult = await fetchAllUrls(urls);
-      urlSummaries = urlResult.summaries;
-      failedUrls = urlResult.failedUrls;
-
-      if (failedUrls.length > 0) {
-        console.warn(`Failed to fetch URLs: ${failedUrls.join(", ")}`);
-      }
+      console.log(`Including ${urls.length} reference URLs for OpenAI`);
     }
 
-    // Step 2: Generate podcast script
+    // Step 1: Generate podcast script (URLs passed directly to OpenAI)
     console.log("Generating podcast script...");
     const segments = await generateScript(
       topic,
-      urlSummaries,
+      urls,
       duration,
       tone,
       audience
     );
     console.log(`Script generated with ${segments.length} segments`);
 
-    // Step 3: Generate audio
+    // Step 2: Generate audio
     console.log("Generating audio...");
     const audioBuffer = await generatePodcastAudio(segments);
 
-    // Step 4: Send email
+    // Step 3: Send email
     console.log(`Sending podcast to ${email}...`);
-    await sendPodcastEmail(
-      email,
-      topic,
-      duration,
-      audioBuffer,
-      failedUrls.length > 0 ? failedUrls : undefined
-    );
+    await sendPodcastEmail(email, topic, duration, audioBuffer);
 
     console.log("Podcast generation complete!");
   } catch (error) {

@@ -3,7 +3,7 @@ import { DialogueSegment, DURATION_WORD_COUNTS } from "@/types";
 
 export async function generateScript(
   topic: string,
-  urlSummaries: string,
+  urls: string[],
   duration: string,
   tone: string,
   audience: string
@@ -11,9 +11,13 @@ export async function generateScript(
   const client = await getOpenAIClient();
   const wordCount = DURATION_WORD_COUNTS[duration];
 
-  const systemPrompt = `You are a podcast script writer. Create a natural, engaging conversation between two podcast hosts about the given topic.
+  const urlSection =
+    urls.length > 0
+      ? `\nThe user has provided the following reference URLs. Research and incorporate content from these sources into the conversation:\n${urls.map((u) => `- ${u}`).join("\n")}\n`
+      : "";
 
-${urlSummaries ? `Context from URLs:\n${urlSummaries}\n` : ""}
+  const systemPrompt = `You are a podcast script writer. Create a natural, engaging conversation between two podcast hosts about the given topic.
+${urlSection}
 Requirements:
 - Duration: ${duration} minutes (approximately ${wordCount.min}-${wordCount.max} words total)
 - Tone: ${tone}
