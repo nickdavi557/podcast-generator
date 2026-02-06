@@ -44,19 +44,15 @@ Do NOT include any other text, headers, or formatting. Only output the HOST_A/HO
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const response = await (client.chat.completions.create as any)({
+      const response = await client.chat.completions.create({
         model: "gpt-5.2",
         messages: [
           { role: "system", content: systemPrompt },
           {
             role: "user",
-            content: `Search the web for current information and then create a podcast script about: ${topic}`,
+            content: `Create a podcast script about: ${topic}`,
           },
         ],
-        web_search_options: {
-          search_context_size: "medium",
-        },
         temperature: 0.8,
         max_completion_tokens: 4096,
       });
