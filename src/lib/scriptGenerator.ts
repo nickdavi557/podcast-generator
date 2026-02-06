@@ -47,7 +47,7 @@ Do NOT include any other text, headers, or formatting. Only output the HOST_A/HO
           },
         ],
         temperature: 0.8,
-        max_tokens: 4096,
+        max_completion_tokens: 4096,
       });
 
       const script = response.choices[0]?.message?.content;
