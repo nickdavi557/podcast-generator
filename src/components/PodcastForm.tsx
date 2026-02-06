@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   podcastFormSchema,
   PodcastFormData,
-  PodcastResponse,
+  JobStatus,
   TONE_LABELS,
   AUDIENCE_LABELS,
 } from "@/types";
@@ -25,7 +25,10 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 export default function PodcastForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [result, setResult] = useState<PodcastResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
   const {
     register,
@@ -45,9 +48,42 @@ export default function PodcastForm() {
 
   const duration = watch("duration");
 
+  const stopPolling = useCallback(() => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+  }, []);
+
+  const startPolling = useCallback(
+    (id: string) => {
+      stopPolling();
+      pollingRef.current = setInterval(async () => {
+        try {
+          const res = await fetch(`/api/podcast-status/${id}`);
+          const data: JobStatus = await res.json();
+          setJobStatus(data);
+
+          if (data.status === "completed" || data.status === "error") {
+            stopPolling();
+          }
+        } catch {
+          // Keep polling on network errors
+        }
+      }, 1500);
+    },
+    [stopPolling]
+  );
+
+  useEffect(() => {
+    return () => stopPolling();
+  }, [stopPolling]);
+
   const onSubmit = async (data: PodcastFormData) => {
     setIsSubmitting(true);
-    setResult(null);
+    setError(null);
+    setJobId(null);
+    setJobStatus(null);
 
     try {
       const urls = data.urls
@@ -66,70 +102,123 @@ export default function PodcastForm() {
           duration: data.duration,
           tone: data.tone,
           audience: data.audience,
-          email: data.email,
         }),
       });
 
-      const result: PodcastResponse = await response.json();
-      setResult(result);
+      const result = await response.json();
+
+      if (result.status === "error") {
+        setError(result.message || "Something went wrong");
+        setIsSubmitting(false);
+        return;
+      }
+
+      setJobId(result.jobId);
+      setJobStatus({ status: "processing", progress: 0, stage: "Starting..." });
+      startPolling(result.jobId);
     } catch {
-      setResult({
-        status: "error",
-        message: "Failed to submit request. Please try again.",
-      });
+      setError("Failed to submit request. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  if (result?.status === "processing") {
+  const handleReset = () => {
+    stopPolling();
+    setJobId(null);
+    setJobStatus(null);
+    setError(null);
+    reset();
+  };
+
+  // Progress / completed / error view
+  if (jobId && jobStatus) {
     return (
-      <div className="text-center space-y-6">
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-100">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="32"
-            height="32"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="text-green-600"
-          >
-            <path d="M20 6 9 17l-5-5" />
-          </svg>
+      <div className="space-y-6">
+        {/* Progress bar */}
+        <div className="space-y-3">
+          <div className="flex justify-between text-sm">
+            <span className="text-muted-foreground">{jobStatus.stage}</span>
+            <span className="font-medium">{jobStatus.progress}%</span>
+          </div>
+          <div className="h-3 w-full rounded-full bg-secondary overflow-hidden">
+            <div
+              className="h-full rounded-full bg-primary transition-all duration-500 ease-out"
+              style={{ width: `${jobStatus.progress}%` }}
+            />
+          </div>
         </div>
-        <h2 className="text-2xl font-semibold text-foreground">
-          Podcast is Being Generated!
-        </h2>
-        <p className="text-muted-foreground max-w-md mx-auto">
-          {result.message}
-        </p>
-        {result.estimatedTime && (
-          <p className="text-sm text-muted-foreground">
-            Estimated time: {result.estimatedTime}
-          </p>
+
+        {/* Completed */}
+        {jobStatus.status === "completed" && (
+          <div className="text-center space-y-4">
+            <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-green-100">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="28"
+                height="28"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="text-green-600"
+              >
+                <path d="M20 6 9 17l-5-5" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-semibold">Your podcast is ready!</h2>
+            <div className="flex flex-col gap-3">
+              <a
+                href={`/api/podcast-download/${jobId}`}
+                download
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-primary text-primary-foreground h-11 px-8 text-sm font-medium hover:bg-primary/90 transition-colors"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" x2="12" y1="15" y2="3" />
+                </svg>
+                Download Podcast
+              </a>
+              <Button onClick={handleReset} variant="outline">
+                Create Another Podcast
+              </Button>
+            </div>
+          </div>
         )}
-        <Button
-          onClick={() => {
-            setResult(null);
-            reset();
-          }}
-          variant="outline"
-        >
-          Create Another Podcast
-        </Button>
+
+        {/* Error */}
+        {jobStatus.status === "error" && (
+          <div className="text-center space-y-4">
+            <div className="rounded-md bg-destructive/10 p-4 text-sm text-destructive">
+              {jobStatus.error || "Something went wrong during generation."}
+            </div>
+            <Button onClick={handleReset} variant="outline">
+              Try Again
+            </Button>
+          </div>
+        )}
       </div>
     );
   }
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-      {result?.status === "error" && (
+      {error && (
         <div className="rounded-md bg-destructive/10 p-4 text-sm text-destructive">
-          {result.message}
+          {error}
         </div>
       )}
 
@@ -245,22 +334,6 @@ export default function PodcastForm() {
         </Select>
         {errors.audience && (
           <p className="text-sm text-destructive">{errors.audience.message}</p>
-        )}
-      </div>
-
-      {/* Email */}
-      <div className="space-y-2">
-        <Label htmlFor="email">
-          Email Address <span className="text-destructive">*</span>
-        </Label>
-        <Input
-          id="email"
-          type="email"
-          placeholder="your.email@example.com"
-          {...register("email")}
-        />
-        {errors.email && (
-          <p className="text-sm text-destructive">{errors.email.message}</p>
         )}
       </div>
 

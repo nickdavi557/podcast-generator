@@ -18,7 +18,6 @@ export const podcastFormSchema = z.object({
     "students",
     "enthusiasts",
   ]),
-  email: z.string().email("Please enter a valid email address"),
 });
 
 export type PodcastFormData = z.infer<typeof podcastFormSchema>;
@@ -39,13 +38,19 @@ export interface PodcastRequest {
     | "entertaining"
     | "deep_dive";
   audience: "general" | "technical" | "business" | "students" | "enthusiasts";
-  email: string;
 }
 
 export interface PodcastResponse {
   status: "processing" | "error";
+  jobId?: string;
   message: string;
-  estimatedTime?: string;
+  error?: string;
+}
+
+export interface JobStatus {
+  status: "processing" | "completed" | "error";
+  progress: number;
+  stage: string;
   error?: string;
 }
 

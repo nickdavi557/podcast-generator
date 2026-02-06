@@ -44,7 +44,8 @@ Do NOT include any other text, headers, or formatting. Only output the HOST_A/HO
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      const response = await client.chat.completions.create({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const response = await (client.chat.completions.create as any)({
         model: "gpt-5.2",
         messages: [
           { role: "system", content: systemPrompt },
@@ -58,7 +59,7 @@ Do NOT include any other text, headers, or formatting. Only output the HOST_A/HO
         },
         temperature: 0.8,
         max_completion_tokens: 4096,
-      } as Record<string, unknown>);
+      });
 
       const script = response.choices[0]?.message?.content;
       if (!script) {

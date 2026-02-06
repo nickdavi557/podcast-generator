@@ -1,9 +1,10 @@
 import "@/lib/polyfills";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { createJob, updateJob } from "@/lib/jobStore";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 300; // 5 minutes for Vercel Pro
+export const maxDuration = 300;
 
 const requestSchema = z.object({
   topic: z.string().min(1).max(500),
@@ -23,7 +24,6 @@ const requestSchema = z.object({
     "students",
     "enthusiasts",
   ]),
-  email: z.string().email(),
 });
 
 export async function POST(request: NextRequest) {
@@ -49,80 +49,82 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { topic, urls, duration, tone, audience, email } = parsed.data;
+  const { topic, urls, duration, tone, audience } = parsed.data;
 
-  // Fire-and-forget: start background processing, respond immediately
+  const jobId = crypto.randomUUID();
+  createJob(jobId, topic);
+
   const processingPromise = processInBackground(
+    jobId,
     topic,
     urls || [],
     duration,
     tone,
-    audience,
-    email
+    audience
   );
 
-  // Prevent the promise from crashing the process if it rejects unhandled
   processingPromise.catch((err) => {
     console.error("Background processing failed:", err);
   });
 
   return NextResponse.json({
     status: "processing",
-    message:
-      "Your podcast is being generated! You'll receive it via email shortly.",
-    estimatedTime: "3-5 minutes",
+    jobId,
+    message: "Your podcast is being generated!",
   });
 }
 
 async function processInBackground(
+  jobId: string,
   topic: string,
   urls: string[],
   duration: string,
   tone: string,
-  audience: string,
-  email: string
+  audience: string
 ): Promise<void> {
-  // Dynamic imports to avoid build-time issues with Node.js 18 + openai SDK
   const { generateScript } = await import("@/lib/scriptGenerator");
   const { generatePodcastAudio } = await import("@/lib/audioGenerator");
-  const { sendPodcastEmail, sendErrorEmail } = await import(
-    "@/lib/emailSender"
-  );
 
   try {
-    console.log(`Starting podcast generation for topic: "${topic}"`);
+    console.log(`[${jobId}] Starting podcast generation for: "${topic}"`);
+
+    // Step 1: Generate script (0-40%)
+    updateJob(jobId, { progress: 5, stage: "Searching the web and writing script..." });
+
     if (urls.length > 0) {
-      console.log(`Including ${urls.length} reference URLs for OpenAI`);
+      console.log(`[${jobId}] Including ${urls.length} reference URLs`);
     }
 
-    // Step 1: Generate podcast script (URLs passed directly to OpenAI)
-    console.log("Generating podcast script...");
-    const segments = await generateScript(
-      topic,
-      urls,
-      duration,
-      tone,
-      audience
-    );
-    console.log(`Script generated with ${segments.length} segments`);
+    const segments = await generateScript(topic, urls, duration, tone, audience);
+    console.log(`[${jobId}] Script generated with ${segments.length} segments`);
 
-    // Step 2: Generate audio
-    console.log("Generating audio...");
-    const audioBuffer = await generatePodcastAudio(segments);
+    // Step 2: Generate audio (40-95%)
+    updateJob(jobId, { progress: 40, stage: "Generating audio..." });
 
-    // Step 3: Send email
-    console.log(`Sending podcast to ${email}...`);
-    await sendPodcastEmail(email, topic, duration, audioBuffer);
+    const audioBuffer = await generatePodcastAudio(segments, (segIndex, total) => {
+      const audioProgress = 40 + Math.round((segIndex / total) * 55);
+      updateJob(jobId, {
+        progress: audioProgress,
+        stage: `Generating audio (${segIndex}/${total})...`,
+      });
+    });
 
-    console.log("Podcast generation complete!");
+    // Step 3: Done
+    updateJob(jobId, {
+      status: "completed",
+      progress: 100,
+      stage: "Complete!",
+      audioBuffer,
+    });
+
+    console.log(`[${jobId}] Podcast generation complete!`);
   } catch (error) {
-    console.error("Podcast generation failed:", error);
-
-    // Try to send error notification email
-    await sendErrorEmail(
-      email,
-      topic,
-      error instanceof Error ? error.message : "Unknown error occurred"
-    );
+    console.error(`[${jobId}] Podcast generation failed:`, error);
+    updateJob(jobId, {
+      status: "error",
+      progress: 0,
+      stage: "Failed",
+      error: error instanceof Error ? error.message : "Unknown error occurred",
+    });
   }
 }

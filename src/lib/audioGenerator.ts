@@ -77,7 +77,8 @@ function createSilenceMp3(durationMs: number = 300): Buffer {
 }
 
 export async function generatePodcastAudio(
-  segments: DialogueSegment[]
+  segments: DialogueSegment[],
+  onProgress?: (segmentIndex: number, total: number) => void
 ): Promise<Buffer> {
   console.log(`Generating audio for ${segments.length} segments...`);
   const audioBuffers: Buffer[] = [];
@@ -87,6 +88,7 @@ export async function generatePodcastAudio(
     console.log(
       `Generating segment ${i + 1}/${segments.length} (${segments[i].speaker})...`
     );
+    onProgress?.(i + 1, segments.length);
     const audioBuffer = await generateSegmentAudio(segments[i]);
     audioBuffers.push(audioBuffer);
 
