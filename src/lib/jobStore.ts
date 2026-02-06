@@ -9,7 +9,13 @@ export interface Job {
   createdAt: number;
 }
 
-const jobs = new Map<string, Job>();
+// Use globalThis to ensure a single shared Map across all module instances
+// (Next.js dev mode creates separate module contexts per route)
+const globalForJobs = globalThis as unknown as { __podcastJobs?: Map<string, Job> };
+if (!globalForJobs.__podcastJobs) {
+  globalForJobs.__podcastJobs = new Map<string, Job>();
+}
+const jobs = globalForJobs.__podcastJobs;
 
 // Clean up jobs older than 30 minutes
 const EXPIRY_MS = 30 * 60 * 1000;
