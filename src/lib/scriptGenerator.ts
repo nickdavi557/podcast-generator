@@ -13,10 +13,12 @@ export async function generateScript(
 
   const urlSection =
     urls.length > 0
-      ? `\nThe user has provided the following reference URLs. Research and incorporate content from these sources into the conversation:\n${urls.map((u) => `- ${u}`).join("\n")}\n`
+      ? `\nThe user has also provided these specific URLs to reference. Make sure to search and read these pages, and incorporate their content into the conversation:\n${urls.map((u) => `- ${u}`).join("\n")}\n`
       : "";
 
-  const systemPrompt = `You are a podcast script writer. Create a natural, engaging conversation between two podcast hosts about the given topic.
+  const systemPrompt = `You are a podcast script writer. Your job is to create a natural, engaging conversation between two podcast hosts.
+
+IMPORTANT: Before writing the script, you MUST search the web for recent, relevant information about the topic. Find credible sources, current developments, interesting facts, and expert opinions. Base the conversation on real, up-to-date information from your research — not just general knowledge.
 ${urlSection}
 Requirements:
 - Duration: ${duration} minutes (approximately ${wordCount.min}-${wordCount.max} words total)
@@ -25,6 +27,7 @@ Requirements:
 - Format: Dialogue between Host A and Host B
 - Each speaker should talk for 1-3 sentences before switching
 - Include natural conversational elements (agreements, follow-up questions, excitement)
+- Reference specific findings from your web research (e.g., "I was reading that..." or "According to...")
 - Make it informative but entertaining
 - End with a brief wrap-up/conclusion
 
@@ -47,12 +50,15 @@ Do NOT include any other text, headers, or formatting. Only output the HOST_A/HO
           { role: "system", content: systemPrompt },
           {
             role: "user",
-            content: `Create a podcast script about: ${topic}`,
+            content: `Search the web for current information and then create a podcast script about: ${topic}`,
           },
         ],
+        web_search_options: {
+          search_context_size: "medium",
+        },
         temperature: 0.8,
         max_completion_tokens: 4096,
-      });
+      } as Record<string, unknown>);
 
       const script = response.choices[0]?.message?.content;
       if (!script) {
